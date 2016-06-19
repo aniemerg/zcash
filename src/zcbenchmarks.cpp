@@ -1,8 +1,5 @@
-#include "zerocash/IncrementalMerkleTree.h"
-
 #include <unistd.h>
 #include <boost/filesystem.hpp>
-#include "zerocash/ZerocashParams.h"
 #include "coins.h"
 #include "util.h"
 #include "init.h"
@@ -14,6 +11,11 @@
 #include "streams.h"
 
 #include "zcbenchmarks.h"
+
+#include "zcash/Zcash.h"
+#include "zcash/IncrementalMerkleTree.hpp"
+
+using namespace libzcash;
 
 struct timeval tv_start;
 
@@ -42,64 +44,50 @@ double benchmark_sleep()
 double benchmark_parameter_loading()
 {
     // FIXME: this is duplicated with the actual loading code
-    boost::filesystem::path pk_path = ZC_GetParamsDir() / "zc-testnet-public-alpha-proving.key";
-    boost::filesystem::path vk_path = ZC_GetParamsDir() / "zc-testnet-public-alpha-verification.key";
+    boost::filesystem::path pk_path = ZC_GetParamsDir() / "z5-proving.key";
+    boost::filesystem::path vk_path = ZC_GetParamsDir() / "z5-verifying.key";
 
     timer_start();
-    auto vk_loaded = libzerocash::ZerocashParams::LoadVerificationKeyFromFile(
-        vk_path.string(),
-        INCREMENTAL_MERKLE_TREE_DEPTH
-    );
-    auto pk_loaded = libzerocash::ZerocashParams::LoadProvingKeyFromFile(
-        pk_path.string(),
-        INCREMENTAL_MERKLE_TREE_DEPTH
-    );
-    libzerocash::ZerocashParams zerocashParams = libzerocash::ZerocashParams(
-        INCREMENTAL_MERKLE_TREE_DEPTH,
-        &pk_loaded,
-        &vk_loaded
-    );
-    return timer_stop();
+
+    auto newParams = ZCJoinSplit::Unopened();
+
+    newParams->loadVerifyingKey(vk_path.string());
+    newParams->setProvingKeyPath(pk_path.string());
+    newParams->loadProvingKey();
+
+    double ret = timer_stop();
+
+    delete newParams;
+
+    return ret;
 }
 
 double benchmark_create_joinsplit()
 {
-    CScript scriptPubKey;
-
-    std::vector<PourInput> vpourin;
-    std::vector<PourOutput> vpourout;
-
-    while (vpourin.size() < NUM_POUR_INPUTS) {
-        vpourin.push_back(PourInput(INCREMENTAL_MERKLE_TREE_DEPTH));
-    }
-
-    while (vpourout.size() < NUM_POUR_OUTPUTS) {
-        vpourout.push_back(PourOutput(0));
-    }
+    uint256 pubKeyHash;
 
     /* Get the anchor of an empty commitment tree. */
-    IncrementalMerkleTree blank_tree(INCREMENTAL_MERKLE_TREE_DEPTH);
-    std::vector<unsigned char> newrt_v(32);
-    blank_tree.getRootValue(newrt_v);
-    uint256 anchor = uint256(newrt_v);
+    uint256 anchor = ZCIncrementalMerkleTree().root();
 
     timer_start();
-    CPourTx pourtx(*pzerocashParams,
-                   scriptPubKey,
+    CPourTx pourtx(*pzcashParams,
+                   pubKeyHash,
                    anchor,
-                   {vpourin[0], vpourin[1]},
-                   {vpourout[0], vpourout[1]},
+                   {JSInput(), JSInput()},
+                   {JSOutput(), JSOutput()},
                    0,
                    0);
     double ret = timer_stop();
-    assert(pourtx.Verify(*pzerocashParams));
+
+    assert(pourtx.Verify(*pzcashParams, pubKeyHash));
     return ret;
 }
 
 double benchmark_verify_joinsplit(const CPourTx &joinsplit)
 {
     timer_start();
-    joinsplit.Verify(*pzerocashParams);
+    uint256 pubKeyHash;
+    joinsplit.Verify(*pzcashParams, pubKeyHash);
     return timer_stop();
 }
 
@@ -110,9 +98,10 @@ double benchmark_solve_equihash()
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
     ss << I;
 
-    Equihash eh {Params(CBaseChainParams::MAIN).EquihashN(), Params(CBaseChainParams::MAIN).EquihashK()};
+    unsigned int n = Params(CBaseChainParams::MAIN).EquihashN();
+    unsigned int k = Params(CBaseChainParams::MAIN).EquihashK();
     crypto_generichash_blake2b_state eh_state;
-    eh.InitialiseState(eh_state);
+    EhInitialiseState(n, k, eh_state);
     crypto_generichash_blake2b_update(&eh_state, (unsigned char*)&ss[0], ss.size());
 
     uint256 nonce;
@@ -122,7 +111,8 @@ double benchmark_solve_equihash()
                                     nonce.size());
 
     timer_start();
-    eh.BasicSolve(eh_state);
+    std::set<std::vector<unsigned int>> solns;
+    EhOptimisedSolve(n, k, eh_state, solns);
     return timer_stop();
 }
 

@@ -31,7 +31,7 @@ LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
 LIBBITCOIN_UNIVALUE=univalue/libbitcoin_univalue.a
 LIBBITCOINQT=qt/libbitcoinqt.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
-LIBZEROCASH=libzerocash.a
+LIBZCASH=libzcash.a
 
 $(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
 	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
@@ -45,7 +45,7 @@ EXTRA_LIBRARIES = \
   univalue/libbitcoin_univalue.a \
   libbitcoin_server.a \
   libbitcoin_cli.a \
-  libzerocash.a
+  libzcash.a
 if ENABLE_WALLET
 BITCOIN_INCLUDES += $(BDB_CPPFLAGS)
 EXTRA_LIBRARIES += libbitcoin_wallet.a
@@ -70,23 +70,15 @@ if BUILD_BITCOIN_UTILS
 endif
 
 # TODO: rename to libzcash
-LIBZEROCASH_H = \
+LIBZCASH_H = \
   zcash/IncrementalMerkleTree.h \
-  zerocash/Address.h \
-  zerocash/CoinCommitment.h \
-  zerocash/Coin.h \
-  zerocash/IncrementalMerkleTree.h \
-  zerocash/MintTransaction.h \
-  zerocash/PourInput.h \
-  zerocash/PourOutput.h \
-  zerocash/PourProver.h \
-  zerocash/PourTransaction.h \
-  zerocash/Zerocash.h \
-  zerocash/ZerocashParams.h \
-  zerocash/zerocash_pour_params.hpp \
   zerocash/utils/util.h \
   zcash/NoteEncryption.hpp \
-  zcash/prf.h
+  zcash/Address.hpp \
+  zcash/JoinSplit.hpp \
+  zcash/Note.hpp \
+  zcash/prf.h \
+  zcash/util.h
 
 .PHONY: FORCE
 # bitcoin core #
@@ -163,6 +155,7 @@ BITCOIN_CORE_H = \
   txmempool.h \
   ui_interface.h \
   uint256.h \
+  uint252.h \
   undo.h \
   util.h \
   utilmoneystr.h \
@@ -224,7 +217,7 @@ libbitcoin_server_a_SOURCES = \
   validationinterface.cpp \
   $(JSON_H) \
   $(BITCOIN_CORE_H) \
-  $(LIBZEROCASH_H)
+  $(LIBZCASH_H)
 
 # wallet: shared between bitcoind and bitcoin-qt, but only linked
 # when wallet enabled
@@ -239,7 +232,7 @@ libbitcoin_wallet_a_SOURCES = \
   wallet/wallet_ismine.cpp \
   wallet/walletdb.cpp \
   $(BITCOIN_CORE_H) \
-  $(LIBZEROCASH_H)
+  $(LIBZCASH_H)
 
 # crypto primitives library
 crypto_libbitcoin_crypto_a_CPPFLAGS = $(BITCOIN_CONFIG_INCLUDES)
@@ -296,7 +289,7 @@ libbitcoin_common_a_SOURCES = \
   script/sign.cpp \
   script/standard.cpp \
   $(BITCOIN_CORE_H) \
-  $(LIBZEROCASH_H)
+  $(LIBZCASH_H)
 
 # util: shared between all executables.
 # This library *must* be included to make sure that the glibc
@@ -319,7 +312,7 @@ libbitcoin_util_a_SOURCES = \
   utilstrencodings.cpp \
   utiltime.cpp \
   $(BITCOIN_CORE_H) \
-  $(LIBZEROCASH_H)
+  $(LIBZCASH_H)
 
 if GLIBC_BACK_COMPAT
 libbitcoin_util_a_SOURCES += compat/glibc_compat.cpp
@@ -330,7 +323,7 @@ libbitcoin_cli_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libbitcoin_cli_a_SOURCES = \
   rpcclient.cpp \
   $(BITCOIN_CORE_H) \
-  $(LIBZEROCASH_H)
+  $(LIBZCASH_H)
 
 nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 #
@@ -350,7 +343,7 @@ zcashd_LDADD = \
   $(LIBBITCOIN_UNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBZEROCASH) \
+  $(LIBZCASH) \
   $(LIBLEVELDB) \
   $(LIBMEMENV) \
   $(LIBSECP256K1)
@@ -365,9 +358,9 @@ zcashd_LDADD += \
   $(SSL_LIBS) \
   $(CRYPTO_LIBS) \
   $(MINIUPNPC_LIBS) \
-  $(LIBZEROCASH) \
+  $(LIBZCASH) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBZEROCASH_LIBS)
+  $(LIBZCASH_LIBS)
 #
 
 # bitcoin-cli binary #
@@ -385,9 +378,9 @@ zcash_cli_LDADD = \
   $(BOOST_LIBS) \
   $(SSL_LIBS) \
   $(CRYPTO_LIBS) \
-  $(LIBZEROCASH) \
+  $(LIBZCASH) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBZEROCASH_LIBS)
+  $(LIBZCASH_LIBS)
 #
 
 # bitcoin-tx binary #
@@ -399,37 +392,31 @@ if TARGET_WINDOWS
 bitcoin_tx_SOURCES += bitcoin-tx-res.rc
 endif
 
-# FIXME: Is libzerocash needed for bitcoin_tx?
+# FIXME: Is libzcash needed for bitcoin_tx?
 bitcoin_tx_LDADD = \
   $(LIBBITCOIN_UNIVALUE) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
   $(LIBSECP256K1) \
-  $(LIBZEROCASH) \
+  $(LIBZCASH) \
   $(LIBBITCOIN_CRYPTO) \
-  $(LIBZEROCASH_LIBS)
+  $(LIBZCASH_LIBS)
 
 bitcoin_tx_LDADD += $(BOOST_LIBS) $(CRYPTO_LIBS)
 #
 
 # zerocash protocol primitives #
-libzerocash_a_SOURCES = \
+libzcash_a_SOURCES = \
   zcash/IncrementalMerkleTree.cpp \
-  zerocash/Address.cpp \
-  zerocash/CoinCommitment.cpp \
-  zerocash/Coin.cpp \
-  zerocash/IncrementalMerkleTree.cpp \
-  zerocash/MintTransaction.cpp \
-  zerocash/PourInput.cpp \
-  zerocash/PourOutput.cpp \
-  zerocash/PourProver.cpp \
-  zerocash/PourTransaction.cpp \
-  zerocash/ZerocashParams.cpp \
   zerocash/utils/util.cpp \
   zcash/NoteEncryption.cpp \
-  zcash/prf.cpp
+  zcash/Address.cpp \
+  zcash/JoinSplit.cpp \
+  zcash/Note.cpp \
+  zcash/prf.cpp \
+  zcash/util.cpp
 
-libzerocash_a_CPPFLAGS = -fPIC -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2 -std=c++11 -pipe -O2 -O0 -g -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
+libzcash_a_CPPFLAGS = -DMULTICORE -fopenmp -fPIC -DBINARY_OUTPUT -DCURVE_ALT_BN128 -DBOOST_SPIRIT_THREADSAFE -DHAVE_BUILD_INFO -D__STDC_FORMAT_MACROS $(HARDENED_CPPFLAGS) -pipe -O2 -O0 -g -Wstack-protector -fstack-protector-all -fPIE -fvisibility=hidden -DSTATIC $(BITCOIN_INCLUDES)
 
 # bitcoinconsensus library #
 if BUILD_BITCOIN_LIBS
@@ -467,7 +454,7 @@ CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno
 
 DISTCLEANFILES = obj/build.h
 
-EXTRA_DIST = leveldb libzerocash/Makefile
+EXTRA_DIST = leveldb
 
 clean-local:
 	-$(MAKE) -C leveldb clean

@@ -314,20 +314,34 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const
             assert(it3->second.n == i);
             i++;
         }
+
+        boost::unordered_map<uint256, ZCIncrementalMerkleTree, CCoinsKeyHasher> intermediates;
+
         BOOST_FOREACH(const CPourTx &pour, tx.vpour) {
             BOOST_FOREACH(const uint256 &serial, pour.serials) {
                 assert(!pcoins->GetSerial(serial));
             }
 
-            // TODO: chained pours
             ZCIncrementalMerkleTree tree;
-            assert(pcoins->GetAnchorAt(pour.anchor, tree));
+            auto it = intermediates.find(pour.anchor);
+            if (it != intermediates.end()) {
+                tree = it->second;
+            } else {
+                assert(pcoins->GetAnchorAt(pour.anchor, tree));
+            }
+
+            BOOST_FOREACH(const uint256& commitment, pour.commitments)
+            {
+                tree.append(commitment);
+            }
+
+            intermediates.insert(std::make_pair(tree.root(), tree));
         }
         if (fDependsWait)
             waitingOnDependants.push_back(&it->second);
         else {
             CValidationState state;
-            assert(CheckInputs(tx, state, mempoolDuplicate, false, 0, false, NULL));
+            assert(ContextualCheckInputs(tx, state, mempoolDuplicate, false, 0, false, Params().GetConsensus(), NULL));
             UpdateCoins(tx, state, mempoolDuplicate, 1000000);
         }
     }
@@ -341,7 +355,7 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const
             stepsSinceLastRemove++;
             assert(stepsSinceLastRemove < waitingOnDependants.size());
         } else {
-            assert(CheckInputs(entry->GetTx(), state, mempoolDuplicate, false, 0, false, NULL));
+            assert(ContextualCheckInputs(entry->GetTx(), state, mempoolDuplicate, false, 0, false, Params().GetConsensus(), NULL));
             UpdateCoins(entry->GetTx(), state, mempoolDuplicate, 1000000);
             stepsSinceLastRemove = 0;
         }

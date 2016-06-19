@@ -8,8 +8,9 @@ https://github.com/zcash/zips/blob/master/protocol/protocol.pdf
 
 #include <boost/array.hpp>
 #include "uint256.h"
+#include "uint252.h"
 
-#include "zerocash/Zerocash.h"
+#include "zcash/Zcash.h"
 
 namespace libzcash {
 
@@ -43,7 +44,7 @@ public:
                       );
 
     // Creates a NoteEncryption private key
-    static uint256 generate_privkey(const uint256 &a_sk);
+    static uint256 generate_privkey(const uint252 &a_sk);
 
     // Creates a NoteEncryption public key from a private key
     static uint256 generate_pubkey(const uint256 &sk_enc);
@@ -70,10 +71,11 @@ public:
 };
 
 uint256 random_uint256();
+uint252 random_uint252();
 
 }
 
-typedef libzcash::NoteEncryption<ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE> ZCNoteEncryption;
-typedef libzcash::NoteDecryption<ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE> ZCNoteDecryption;
+typedef libzcash::NoteEncryption<ZC_NOTEPLAINTEXT_LEADING + ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE> ZCNoteEncryption;
+typedef libzcash::NoteDecryption<ZC_NOTEPLAINTEXT_LEADING + ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE> ZCNoteDecryption;
 
 #endif /* ZC_NOTE_ENCRYPTION_H_ */

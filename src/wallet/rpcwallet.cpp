@@ -18,6 +18,9 @@
 #include "walletdb.h"
 #include "primitives/transaction.h"
 #include "zcbenchmarks.h"
+#include "script/interpreter.h"
+
+#include "sodium.h"
 
 #include <stdint.h>
 
@@ -28,6 +31,8 @@
 
 using namespace std;
 using namespace json_spirit;
+
+using namespace libzcash;
 
 int64_t nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
@@ -2385,7 +2390,7 @@ Value zc_benchmark(const json_spirit::Array& params, bool fHelp)
     if (benchmarktype == "createjoinsplit") {
         /* Load the proving now key so that it doesn't happen as part of the
          * first joinsplit. */
-        pzerocashParams->loadProvingKey();
+        pzcashParams->loadProvingKey();
     }
 
     for (int i = 0; i < samplecount; i++) {
@@ -2454,27 +2459,13 @@ Value zc_raw_receive(const json_spirit::Array& params, bool fHelp)
 
     LOCK(cs_main);
 
-    uint256 a_sk;
-    uint256 sk_enc;
-
-    {
-        CDataStream ssData(ParseHexV(params[0], "zcsecretkey"), SER_NETWORK, PROTOCOL_VERSION);
-        try {
-            ssData >> a_sk;
-            ssData >> sk_enc;
-        } catch(const std::exception &) {
-            throw runtime_error(
-                "zcsecretkey could not be decoded"
-            );
-        }
-    }
-
-    libzerocash::PrivateAddress zcsecretkey(a_sk, sk_enc);
-    libzerocash::Address zcaddress(zcsecretkey);
+    CZCSpendingKey spendingkey(params[0].get_str());
+    SpendingKey k = spendingkey.Get();
 
     uint256 epk;
     unsigned char nonce;
     ZCNoteEncryption::Ciphertext ct;
+    uint256 h_sig;
 
     {
         CDataStream ssData(ParseHexV(params[1], "encrypted_bucket"), SER_NETWORK, PROTOCOL_VERSION);
@@ -2482,6 +2473,7 @@ Value zc_raw_receive(const json_spirit::Array& params, bool fHelp)
             ssData >> nonce;
             ssData >> epk;
             ssData >> ct;
+            ssData >> h_sig;
         } catch(const std::exception &) {
             throw runtime_error(
                 "encrypted_bucket could not be decoded"
@@ -2489,31 +2481,39 @@ Value zc_raw_receive(const json_spirit::Array& params, bool fHelp)
         }
     }
 
-    libzerocash::Coin decrypted_bucket(ct, zcaddress, epk, nonce);
+    ZCNoteDecryption decryptor(k.viewing_key());
 
-    std::vector<unsigned char> commitment_v = decrypted_bucket.getCoinCommitment().getCommitmentValue();
-    uint256 commitment = uint256(commitment_v);
+    NotePlaintext npt = NotePlaintext::decrypt(
+        decryptor,
+        ct,
+        epk,
+        h_sig,
+        nonce
+    );
+    PaymentAddress payment_addr = k.address();
+    Note decrypted_note = npt.note(payment_addr);
 
     assert(pwalletMain != NULL);
-    libzcash::MerklePath path;
+    std::vector<boost::optional<ZCIncrementalWitness>> witnesses;
     uint256 anchor;
-    auto found_in_chain = pwalletMain->WitnessBucketCommitment(commitment, path, anchor);
-
-    CAmount value_of_bucket = decrypted_bucket.getValue();
+    uint256 commitment = decrypted_note.cm();
+    pwalletMain->WitnessBucketCommitment(
+        {commitment},
+        witnesses,
+        anchor
+    );
 
     CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
-    {
-        ss << decrypted_bucket.getValue();
-        ss << decrypted_bucket.getRho();
-        ss << decrypted_bucket.getR();
-    }
+    ss << npt;
 
     Object result;
-    result.push_back(Pair("amount", ValueFromAmount(value_of_bucket)));
+    result.push_back(Pair("amount", ValueFromAmount(decrypted_note.value)));
     result.push_back(Pair("bucket", HexStr(ss.begin(), ss.end())));
-    result.push_back(Pair("exists", found_in_chain));
+    result.push_back(Pair("exists", (bool) witnesses[0]));
     return result;
 }
+
+
 
 Value zc_raw_pour(const json_spirit::Array& params, bool fHelp)
 {
@@ -2563,103 +2563,114 @@ Value zc_raw_pour(const json_spirit::Array& params, bool fHelp)
     if (params[4].get_real() != 0.0)
         vpub_new = AmountFromValue(params[4]);
 
-    std::vector<PourInput> vpourin;
-    std::vector<PourOutput> vpourout;
-
-    uint256 anchor;
+    std::vector<JSInput> vpourin;
+    std::vector<JSOutput> vpourout;
+    std::vector<Note> notes;
+    std::vector<SpendingKey> keys;
+    std::vector<uint256> commitments;
 
     BOOST_FOREACH(const Pair& s, inputs)
     {
-        CDataStream ssData(ParseHexV(s.name_, "bucket"), SER_NETWORK, PROTOCOL_VERSION);
-        uint64_t value;
-        std::vector<unsigned char> rho;
-        std::vector<unsigned char> r;
+        CZCSpendingKey spendingkey(s.value_.get_str());
+        SpendingKey k = spendingkey.Get();
 
-        ssData >> value;
-        ssData >> rho;
-        ssData >> r;
+        keys.push_back(k);
 
-        uint256 a_sk;
-        uint256 sk_enc;
+        NotePlaintext npt;
 
         {
-            CDataStream ssData2(ParseHexV(s.value_, "zcsecretkey"), SER_NETWORK, PROTOCOL_VERSION);
-            try {
-                ssData2 >> a_sk;
-                ssData2 >> sk_enc;
-            } catch(const std::exception &) {
-                throw runtime_error(
-                    "zcsecretkey could not be decoded"
-                );
-            }
+            CDataStream ssData(ParseHexV(s.name_, "bucket"), SER_NETWORK, PROTOCOL_VERSION);
+            ssData >> npt;
         }
 
-        libzerocash::PrivateAddress zcsecretkey(a_sk, sk_enc);
-        libzerocash::Address zcaddress(zcsecretkey);
-        libzerocash::Coin input_coin(zcaddress.getPublicAddress(), value, rho, r);
-
-        std::vector<unsigned char> commitment_v = input_coin.getCoinCommitment().getCommitmentValue();
-        uint256 commitment = uint256(commitment_v);
-
-        libzcash::MerklePath path;
-        assert(pwalletMain != NULL);
-        if (!pwalletMain->WitnessBucketCommitment(commitment, path, anchor)) {
-            throw std::runtime_error("Couldn't find bucket in the blockchain");
-        }
-
-        vpourin.push_back(PourInput(input_coin, zcaddress, path));
+        PaymentAddress addr = k.address();
+        Note note = npt.note(addr);
+        notes.push_back(note);
+        commitments.push_back(note.cm());
     }
 
-    while (vpourin.size() < NUM_POUR_INPUTS) {
-        vpourin.push_back(PourInput(INCREMENTAL_MERKLE_TREE_DEPTH));
+    uint256 anchor;
+    std::vector<boost::optional<ZCIncrementalWitness>> witnesses;
+    pwalletMain->WitnessBucketCommitment(commitments, witnesses, anchor);
+
+    assert(witnesses.size() == notes.size());
+    assert(notes.size() == keys.size());
+
+    {
+        for (size_t i = 0; i < witnesses.size(); i++) {
+            if (!witnesses[i]) {
+                throw runtime_error(
+                    "pour input could not be found in tree"
+                );
+            }
+
+            vpourin.push_back(JSInput(*witnesses[i], notes[i], keys[i]));
+        }
+    }
+
+    while (vpourin.size() < ZC_NUM_JS_INPUTS) {
+        vpourin.push_back(JSInput());
     }
 
     BOOST_FOREACH(const Pair& s, outputs)
     {
-        libzerocash::PublicAddress addrTo;
-
-        {
-            CDataStream ssData(ParseHexV(s.name_, "to_address"), SER_NETWORK, PROTOCOL_VERSION);
-
-            uint256 pubAddressSecret;
-            uint256 encryptionPublicKey;
-
-            ssData >> pubAddressSecret;
-            ssData >> encryptionPublicKey;
-
-            addrTo = libzerocash::PublicAddress(pubAddressSecret, encryptionPublicKey);
-        }
+        CZCPaymentAddress pubaddr(s.name_);
+        PaymentAddress addrTo = pubaddr.Get();
         CAmount nAmount = AmountFromValue(s.value_);
 
-        libzerocash::Coin coin(addrTo, nAmount);
-        libzerocash::PourOutput output(coin, addrTo);
-
-        vpourout.push_back(output);
+        vpourout.push_back(JSOutput(addrTo, nAmount));
     }
 
-    while (vpourout.size() < NUM_POUR_OUTPUTS) {
-        vpourout.push_back(PourOutput(0));
+    while (vpourout.size() < ZC_NUM_JS_OUTPUTS) {
+        vpourout.push_back(JSOutput());
     }
 
     // TODO
-    if (vpourout.size() != NUM_POUR_INPUTS || vpourin.size() != NUM_POUR_OUTPUTS) {
+    if (vpourout.size() != ZC_NUM_JS_INPUTS || vpourin.size() != ZC_NUM_JS_OUTPUTS) {
         throw runtime_error("unsupported pour input/output counts");
     }
 
-    CScript scriptPubKey;
-    CPourTx pourtx(*pzerocashParams,
-                   scriptPubKey,
+    uint256 joinSplitPubKey;
+    unsigned char joinSplitPrivKey[crypto_sign_SECRETKEYBYTES];
+    crypto_sign_keypair(joinSplitPubKey.begin(), joinSplitPrivKey);
+
+    CMutableTransaction mtx(tx);
+    mtx.nVersion = 2;
+    mtx.joinSplitPubKey = joinSplitPubKey;
+
+    CPourTx pourtx(*pzcashParams,
+                   joinSplitPubKey,
                    anchor,
                    {vpourin[0], vpourin[1]},
                    {vpourout[0], vpourout[1]},
                    vpub_old,
                    vpub_new);
 
-    assert(pourtx.Verify(*pzerocashParams));
+    assert(pourtx.Verify(*pzcashParams, joinSplitPubKey));
 
-    CMutableTransaction mtx(tx);
-    mtx.nVersion = 2;
     mtx.vpour.push_back(pourtx);
+
+    // TODO: #966.
+    static const uint256 one(uint256S("0000000000000000000000000000000000000000000000000000000000000001"));
+    // Empty output script.
+    CScript scriptCode;
+    CTransaction signTx(mtx);
+    uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL);
+    if (dataToBeSigned == one) {
+        throw runtime_error("SignatureHash failed");
+    }
+
+    // Add the signature
+    assert(crypto_sign_detached(&mtx.joinSplitSig[0], NULL,
+                         dataToBeSigned.begin(), 32,
+                         joinSplitPrivKey
+                        ) == 0);
+
+    // Sanity check
+    assert(crypto_sign_verify_detached(&mtx.joinSplitSig[0],
+                                       dataToBeSigned.begin(), 32,
+                                       mtx.joinSplitPubKey.begin()
+                                      ) == 0);
 
     CTransaction rawTx(mtx);
 
@@ -2673,6 +2684,7 @@ Value zc_raw_pour(const json_spirit::Array& params, bool fHelp)
         ss2 << ((unsigned char) 0x00);
         ss2 << pourtx.ephemeralKey;
         ss2 << pourtx.ciphertexts[0];
+        ss2 << pourtx.h_sig(*pzcashParams, joinSplitPubKey);
 
         encryptedBucket1 = HexStr(ss2.begin(), ss2.end());
     }
@@ -2681,6 +2693,7 @@ Value zc_raw_pour(const json_spirit::Array& params, bool fHelp)
         ss2 << ((unsigned char) 0x01);
         ss2 << pourtx.ephemeralKey;
         ss2 << pourtx.ciphertexts[1];
+        ss2 << pourtx.h_sig(*pzcashParams, joinSplitPubKey);
 
         encryptedBucket2 = HexStr(ss2.begin(), ss2.end());
     }
@@ -2711,22 +2724,21 @@ Value zc_raw_keygen(const json_spirit::Array& params, bool fHelp)
             );
     }
 
-    auto zckeypair = libzerocash::Address::CreateNewRandomAddress();
+    auto k = SpendingKey::random();
+    auto addr = k.address();
+    auto viewing_key = k.viewing_key();
 
-    CDataStream pub(SER_NETWORK, PROTOCOL_VERSION);
-    CDataStream priv(SER_NETWORK, PROTOCOL_VERSION);
+    CDataStream viewing(SER_NETWORK, PROTOCOL_VERSION);
 
-    pub << zckeypair.getPublicAddress().getPublicAddressSecret(); // a_pk
-    pub << zckeypair.getPublicAddress().getEncryptionPublicKey(); // pk_enc
+    viewing << viewing_key;
 
-    priv << zckeypair.getPrivateAddress().getAddressSecret(); // a_sk
-    priv << zckeypair.getPrivateAddress().getEncryptionSecretKey(); // sk_enc
-
-    std::string pub_hex = HexStr(pub.begin(), pub.end());
-    std::string priv_hex = HexStr(priv.begin(), priv.end());
+    CZCPaymentAddress pubaddr(addr);
+    CZCSpendingKey spendingkey(k);
+    std::string viewing_hex = HexStr(viewing.begin(), viewing.end());
 
     Object result;
-    result.push_back(Pair("zcaddress", pub_hex));
-    result.push_back(Pair("zcsecretkey", priv_hex));
+    result.push_back(Pair("zcaddress", pubaddr.ToString()));
+    result.push_back(Pair("zcsecretkey", spendingkey.ToString()));
+    result.push_back(Pair("zcviewingkey", viewing_hex));
     return result;
 }

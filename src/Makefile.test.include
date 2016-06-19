@@ -27,6 +27,7 @@ JSON_TEST_FILES = \
   test/data/tx_valid.json \
   test/data/sighash.json \
   test/data/merkle_roots.json \
+  test/data/merkle_roots_empty.json \
   test/data/merkle_serialization.json \
   test/data/merkle_witness_serialization.json \
   test/data/merkle_path.json
@@ -38,6 +39,7 @@ GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(RAW_TEST_FILES:.raw=.r
 BITCOIN_TESTS =\
   test/arith_uint256_tests.cpp \
   test/bignum.h \
+  test/addrman_tests.cpp \
   test/alert_tests.cpp \
   test/allocator_tests.cpp \
   test/base32_tests.cpp \
@@ -92,14 +94,14 @@ BITCOIN_TESTS += \
 endif
 
 test_test_bitcoin_SOURCES = $(BITCOIN_TESTS) $(JSON_TEST_FILES) $(RAW_TEST_FILES)
-test_test_bitcoin_CPPFLAGS = $(BITCOIN_INCLUDES) -I$(builddir)/test/ $(TESTDEFS)
+test_test_bitcoin_CPPFLAGS = -fopenmp $(BITCOIN_INCLUDES) -I$(builddir)/test/ $(TESTDEFS)
 test_test_bitcoin_LDADD = $(LIBBITCOIN_SERVER) $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(LIBBITCOIN_CRYPTO) $(LIBBITCOIN_UNIVALUE) $(LIBLEVELDB) $(LIBMEMENV) \
   $(BOOST_LIBS) $(BOOST_UNIT_TEST_FRAMEWORK_LIB) $(LIBSECP256K1)
 if ENABLE_WALLET
 test_test_bitcoin_LDADD += $(LIBBITCOIN_WALLET)
 endif
 
-test_test_bitcoin_LDADD += $(LIBBITCOIN_CONSENSUS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBZEROCASH) $(LIBZEROCASH_LIBS)
+test_test_bitcoin_LDADD += $(LIBBITCOIN_CONSENSUS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBZCASH) $(LIBZCASH_LIBS)
 test_test_bitcoin_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -static
 
 nodist_test_test_bitcoin_SOURCES = $(GENERATED_TEST_FILES)

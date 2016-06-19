@@ -31,15 +31,19 @@ class CMainParams : public CChainParams {
 public:
     CMainParams() {
         strNetworkID = "main";
-        consensus.nSubsidyHalvingInterval = 210000;
+        consensus.fCoinbaseMustBeProtected = true;
+        consensus.nSubsidySlowStartInterval = 20000;
+        consensus.nSubsidyHalvingInterval = 840000;
         consensus.nMajorityEnforceBlockUpgrade = 750;
         consensus.nMajorityRejectBlockOutdated = 950;
-        consensus.nMajorityWindow = 1000;
+        consensus.nMajorityWindow = 4000;
         // TODO generate harder genesis block
         //consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
-        consensus.nPowTargetSpacing = 10 * 60;
+        consensus.nPowAveragingWindow = 17;
+        consensus.nPowMaxAdjustDown = 16; // 16% adjustment down
+        consensus.nPowMaxAdjustUp = 8; // 8% adjustment up
+        consensus.nPowTargetSpacing = 2.5 * 60;
         consensus.fPowAllowMinDifficultyBlocks = false;
         /** 
          * The message start string is designed to be unlikely to occur in normal data.
@@ -51,12 +55,12 @@ public:
         pchMessageStart[2] = 0x4e;
         pchMessageStart[3] = 0xd8;
         vAlertPubKey = ParseHex("04fc9702847840aaf195de8442ebecedf5b095cdbb9bc716bda9110971b28a49e0ead8564ff0db22209e0374782c093bb899692d524e9d6a6956e7c5ecbcd68284");
-        nDefaultPort = 8333;
+        nDefaultPort = 8233;
         nMinerThreads = 0;
         nMaxTipAge = 24 * 60 * 60;
         nPruneAfterHeight = 100000;
         nEquihashN = 96;
-        nEquihashK = 5;
+        nEquihashK = 3;
 
         /**
          * Build the genesis block. Note that the output of its generation
@@ -84,11 +88,11 @@ public:
         // TODO generate harder genesis block
         //genesis.nBits    = 0x1d00ffff;
         genesis.nBits    = 0x207fffff;
-        genesis.nNonce   = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
-        genesis.nSolution = {12086, 55325, 46176, 106974, 82517, 108378, 84300, 100525, 23123, 36333, 52322, 130869, 74855, 115049, 83442, 93016, 12365, 21290, 28394, 50877, 15539, 130505, 108306, 129604, 29629, 88959, 72868, 85109, 52899, 128625, 72371, 130024};
+        genesis.nNonce   = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+        genesis.nSolution = {400496, 12965800, 7933378, 26516310, 3573504, 12897574, 9332739, 12534918};
 
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x29c03e7632293609304ca665a7925df282bca276cd9536bf753255c788f3f14f"));
+        assert(consensus.hashGenesisBlock == uint256S("0x5ff8e250c158c0694814582883343e8a0de5b7e7a5236324d4bf3293a56b6bc5"));
         assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
 
         vSeeds.push_back(CDNSSeedData("bitcoin.sipa.be", "seed.bitcoin.sipa.be")); // Pieter Wuille
@@ -103,6 +107,10 @@ public:
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,128);
         base58Prefixes[EXT_PUBLIC_KEY] = boost::assign::list_of(0x04)(0x88)(0xB2)(0x1E).convert_to_container<std::vector<unsigned char> >();
         base58Prefixes[EXT_SECRET_KEY] = boost::assign::list_of(0x04)(0x88)(0xAD)(0xE4).convert_to_container<std::vector<unsigned char> >();
+        // guarantees the first two characters, when base58 encoded, are "zc"
+        base58Prefixes[ZCPAYMENT_ADDRRESS] = {22,154};
+        // guarantees the first two characters, when base58 encoded, are "SK"
+        base58Prefixes[ZCSPENDING_KEY] = {171,54};
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
 
@@ -146,15 +154,15 @@ public:
         strNetworkID = "test";
         consensus.nMajorityEnforceBlockUpgrade = 51;
         consensus.nMajorityRejectBlockOutdated = 75;
-        consensus.nMajorityWindow = 100;
+        consensus.nMajorityWindow = 400;
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.fPowAllowMinDifficultyBlocks = true;
-        pchMessageStart[0] = 0x01;
-        pchMessageStart[1] = 0x22;
-        pchMessageStart[2] = 0xaa;
-        pchMessageStart[3] = 0x1a;
+        pchMessageStart[0] = 0xa9;
+        pchMessageStart[1] = 0xf0;
+        pchMessageStart[2] = 0x94;
+        pchMessageStart[3] = 0x11;
         vAlertPubKey = ParseHex("04302390343f91cc401d56d68b123028bf52e5fca1939df127f63c6467cdf9c8e2c14b61104cf817d0b780da337893ecc4aaff1309e536162dabbdb45200ca2b0a");
-        nDefaultPort = 18333;
+        nDefaultPort = 18233;
         nMinerThreads = 0;
         nMaxTipAge = 0x7fffffff;
         nPruneAfterHeight = 1000;
@@ -163,9 +171,9 @@ public:
         genesis.nTime = 1296688602;
         genesis.nBits = 0x207fffff;
         genesis.nNonce = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
-        genesis.nSolution = {2461, 50717, 47695, 123428, 26341, 33143, 72062, 77602, 3698, 124246, 70379, 103049, 15704, 26158, 85636, 130587, 3279, 10889, 9205, 26873, 28311, 31643, 30534, 121007, 3517, 25943, 36612, 45442, 9578, 67150, 61295, 82248};
+        genesis.nSolution = {830051, 14471730, 2076450, 21556280, 12194645, 22042975, 16221394, 24048626};
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x27d1f4ce03fc473c9dd6e1e307c682c8f802eae1f5a2f61402aa1ae8702ed3b6"));
+        assert(consensus.hashGenesisBlock == uint256S("0x69675325ac7fb1f5a6bebb7fc8581f9160cbf970817f50b5199df7ff7b2833bd"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -180,6 +188,8 @@ public:
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239);
         base58Prefixes[EXT_PUBLIC_KEY] = boost::assign::list_of(0x04)(0x35)(0x87)(0xCF).convert_to_container<std::vector<unsigned char> >();
         base58Prefixes[EXT_SECRET_KEY] = boost::assign::list_of(0x04)(0x35)(0x83)(0x94).convert_to_container<std::vector<unsigned char> >();
+        base58Prefixes[ZCPAYMENT_ADDRRESS] = {20,81};
+        base58Prefixes[ZCSPENDING_KEY] = {177,235};
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_test, pnSeed6_test + ARRAYLEN(pnSeed6_test));
 
@@ -209,11 +219,15 @@ class CRegTestParams : public CTestNetParams {
 public:
     CRegTestParams() {
         strNetworkID = "regtest";
+        consensus.fCoinbaseMustBeProtected = false;
+        consensus.nSubsidySlowStartInterval = 0;
         consensus.nSubsidyHalvingInterval = 150;
         consensus.nMajorityEnforceBlockUpgrade = 750;
         consensus.nMajorityRejectBlockOutdated = 950;
         consensus.nMajorityWindow = 1000;
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.nPowMaxAdjustDown = 0; // Turn off adjustment down
+        consensus.nPowMaxAdjustUp = 0; // Turn off adjustment up
         pchMessageStart[0] = 0xaa;
         pchMessageStart[1] = 0xe8;
         pchMessageStart[2] = 0x3f;
@@ -224,11 +238,11 @@ public:
         nEquihashK = 5;
         genesis.nTime = 1296688602;
         genesis.nBits = 0x207fffff;
-        genesis.nNonce = uint256S("0x0000000000000000000000000000000000000000000000000000000000000006");
-        genesis.nSolution = {1, 360, 104, 158, 157, 305, 325, 392, 57, 353, 78, 444, 65, 89, 167, 418, 8, 381, 79, 123, 63, 417, 242, 306, 60, 342, 107, 269, 270, 413, 272, 464};
+        genesis.nNonce = uint256S("0x0000000000000000000000000000000000000000000000000000000000000003");
+        genesis.nSolution = {21, 374, 135, 192, 103, 221, 198, 303, 87, 330, 306, 464, 98, 239, 146, 471, 35, 137, 53, 387, 97, 454, 412, 434, 75, 352, 180, 367, 121, 480, 158, 482};
         consensus.hashGenesisBlock = genesis.GetHash();
         nDefaultPort = 18444;
-        assert(consensus.hashGenesisBlock == uint256S("0x3fbae336aedaa2f4a3b8a77d8b65d48820bb820db8e5838ee8182790e1d1e0fa"));
+        assert(consensus.hashGenesisBlock == uint256S("0x37e57b7047e1a59918a8f98b9bbebc0b6e16e246211ad1f5c664d7e8f7d8d709"));
         nPruneAfterHeight = 1000;
 
         vFixedSeeds.clear(); //! Regtest mode doesn't have any fixed seeds.

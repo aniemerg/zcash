@@ -33,7 +33,7 @@ using namespace std;
 
 /**
  * Return average network hashes per second based on the last 'lookup' blocks,
- * or from the last difficulty change if 'lookup' is nonpositive.
+ * or over the difficulty averaging window if 'lookup' is nonpositive.
  * If 'height' is nonnegative, compute the estimate at the time when a given block was found.
  */
 Value GetNetworkHashPS(int lookup, int height) {
@@ -45,9 +45,9 @@ Value GetNetworkHashPS(int lookup, int height) {
     if (pb == NULL || !pb->nHeight)
         return 0;
 
-    // If lookup is -1, then use blocks since last difficulty change.
+    // If lookup is nonpositive, then use difficulty averaging window.
     if (lookup <= 0)
-        lookup = pb->nHeight % Params().GetConsensus().DifficultyAdjustmentInterval() + 1;
+        lookup = Params().GetConsensus().nPowAveragingWindow;
 
     // If lookup is larger than chain, then set it to chain length.
     if (lookup > pb->nHeight)
@@ -79,10 +79,10 @@ Value getnetworkhashps(const Array& params, bool fHelp)
         throw runtime_error(
             "getnetworkhashps ( blocks height )\n"
             "\nReturns the estimated network hashes per second based on the last n blocks.\n"
-            "Pass in [blocks] to override # of blocks, -1 specifies since last difficulty change.\n"
+            "Pass in [blocks] to override # of blocks, -1 specifies over difficulty averaging window.\n"
             "Pass in [height] to estimate the network speed at the time when a certain block was found.\n"
             "\nArguments:\n"
-            "1. blocks     (numeric, optional, default=120) The number of blocks, or -1 for blocks since last difficulty change.\n"
+            "1. blocks     (numeric, optional, default=120) The number of blocks, or -1 for blocks over difficulty averaging window.\n"
             "2. height     (numeric, optional, default=-1) To estimate at the time of the given height.\n"
             "\nResult:\n"
             "x             (numeric) Hashes per second estimated\n"
@@ -150,7 +150,8 @@ Value generate(const Array& params, bool fHelp)
     }
     unsigned int nExtraNonce = 0;
     Array blockHashes;
-    Equihash eh {Params().EquihashN(), Params().EquihashK()};
+    unsigned int n = Params().EquihashN();
+    unsigned int k = Params().EquihashK();
     while (nHeight < nHeightEnd)
     {
         auto_ptr<CBlockTemplate> pblocktemplate(CreateNewBlockWithKey(reservekey));
@@ -164,7 +165,7 @@ Value generate(const Array& params, bool fHelp)
 
         // Hash state
         crypto_generichash_blake2b_state eh_state;
-        eh.InitialiseState(eh_state);
+        EhInitialiseState(n, k, eh_state);
 
         // I = the block header minus nonce and solution.
         CEquihashInput I{*pblock};
@@ -187,10 +188,13 @@ Value generate(const Array& params, bool fHelp)
                                               pblock->nNonce.size());
 
             // (x_1, x_2, ...) = A(I, V, n, k)
-            std::set<std::vector<unsigned int>> solns = eh.BasicSolve(curr_state);
+            std::set<std::vector<unsigned int>> solns;
+            EhBasicSolve(n, k, curr_state, solns);
 
             for (auto soln : solns) {
-                assert(eh.IsValidSolution(curr_state, soln));
+                bool isValid;
+                EhIsValidSolution(n, k, curr_state, soln, isValid);
+                assert(isValid);
                 pblock->nSolution = soln;
 
                 if (CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {

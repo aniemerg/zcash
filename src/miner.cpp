@@ -282,7 +282,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
             // policy here, but we still have to ensure that the block we
             // create only contains transactions that are valid in new blocks.
             CValidationState state;
-            if (!CheckInputs(tx, state, view, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true))
+            if (!ContextualCheckInputs(tx, state, view, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true, Params().GetConsensus()))
                 continue;
 
             UpdateCoins(tx, state, view, nHeight);
@@ -354,6 +354,7 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
 
         // Fill in header
         pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
+        pblock->hashReserved   = uint256();
         UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
         pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, Params().GetConsensus());
         pblock->nNonce         = uint256();
@@ -443,7 +444,8 @@ void static BitcoinMiner(CWallet *pwallet)
     CReserveKey reservekey(pwallet);
     unsigned int nExtraNonce = 0;
 
-    Equihash eh {chainparams.EquihashN(), chainparams.EquihashK()};
+    unsigned int n = chainparams.EquihashN();
+    unsigned int k = chainparams.EquihashK();
 
     try {
         while (true) {
@@ -489,7 +491,7 @@ void static BitcoinMiner(CWallet *pwallet)
             while (true) {
                 // Hash state
                 crypto_generichash_blake2b_state state;
-                eh.InitialiseState(state);
+                EhInitialiseState(n, k, state);
 
                 // I = the block header minus nonce and solution.
                 CEquihashInput I{*pblock};
@@ -512,7 +514,8 @@ void static BitcoinMiner(CWallet *pwallet)
                     // (x_1, x_2, ...) = A(I, V, n, k)
                     LogPrint("pow", "Running Equihash solver with nNonce = %s\n",
                              pblock->nNonce.ToString());
-                    std::set<std::vector<unsigned int>> solns = eh.BasicSolve(curr_state);
+                    std::set<std::vector<unsigned int>> solns;
+                    EhOptimisedSolve(n, k, curr_state, solns);
                     LogPrint("pow", "Solutions: %d\n", solns.size());
 
                     // Write the solution to the hash and compute the result.

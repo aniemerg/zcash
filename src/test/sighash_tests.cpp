@@ -12,6 +12,7 @@
 #include "test/test_bitcoin.h"
 #include "util.h"
 #include "version.h"
+#include "sodium.h"
 
 #include <iostream>
 
@@ -80,6 +81,9 @@ uint256 static SignatureHashOld(CScript scriptCode, const CTransaction& txTo, un
         txTmp.vin.resize(1);
     }
 
+    // Blank out the joinsplit signature.
+    memset(&txTmp.joinSplitSig[0], 0, txTmp.joinSplitSig.size());
+
     // Serialize and hash
     CHashWriter ss(SER_GETHASH, 0);
     ss << txTmp << nHashType;
@@ -124,27 +128,36 @@ void static RandomTransaction(CMutableTransaction &tx, bool fSingle) {
             } else {
                 pourtx.vpub_new = insecure_rand() % 100000000;
             }
-            RandomScript(pourtx.scriptPubKey);
-            RandomScript(pourtx.scriptSig);
+
             pourtx.anchor = GetRandHash();
             pourtx.serials[0] = GetRandHash();
             pourtx.serials[1] = GetRandHash();
             pourtx.ephemeralKey = GetRandHash();
-            pourtx.ciphertexts[0] = {insecure_rand() % 100, insecure_rand() % 100};
-            pourtx.ciphertexts[1] = {insecure_rand() % 100, insecure_rand() % 100};
+            pourtx.randomSeed = GetRandHash();
+            randombytes_buf(pourtx.ciphertexts[0].begin(), pourtx.ciphertexts[0].size());
+            randombytes_buf(pourtx.ciphertexts[1].begin(), pourtx.ciphertexts[1].size());
+            randombytes_buf(pourtx.proof.begin(), pourtx.proof.size());
             pourtx.macs[0] = GetRandHash();
             pourtx.macs[1] = GetRandHash();
-            {
-                std::vector<unsigned char> txt;
-                int prooflen = insecure_rand() % 1000;
-                for (int i = 0; i < prooflen; i++) {
-                    txt.push_back(insecure_rand() % 256);
-                }
-                pourtx.proof = std::string(txt.begin(), txt.end());
-            }
 
             tx.vpour.push_back(pourtx);
         }
+
+        unsigned char joinSplitPrivKey[crypto_sign_SECRETKEYBYTES];
+        crypto_sign_keypair(tx.joinSplitPubKey.begin(), joinSplitPrivKey);
+
+        // TODO: #966.
+        static const uint256 one(uint256S("0000000000000000000000000000000000000000000000000000000000000001"));
+        // Empty output script.
+        CScript scriptCode;
+        CTransaction signTx(tx);
+        uint256 dataToBeSigned = SignatureHash(scriptCode, signTx, NOT_AN_INPUT, SIGHASH_ALL);
+        BOOST_CHECK(dataToBeSigned != one);
+
+        assert(crypto_sign_detached(&tx.joinSplitSig[0], NULL,
+                                    dataToBeSigned.begin(), 32,
+                                    joinSplitPrivKey
+                                    ) == 0);
     }
 }
 

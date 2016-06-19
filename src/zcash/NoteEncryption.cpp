@@ -136,7 +136,7 @@ typename NoteDecryption<MLEN>::Plaintext NoteDecryption<MLEN>::decrypt
 }
 
 template<size_t MLEN>
-uint256 NoteEncryption<MLEN>::generate_privkey(const uint256 &a_sk)
+uint256 NoteEncryption<MLEN>::generate_privkey(const uint252 &a_sk)
 {
     uint256 sk = PRF_addr_sk_enc(a_sk);
 
@@ -165,7 +165,15 @@ uint256 random_uint256()
     return ret;
 }
 
-template class NoteEncryption<ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE>;
-template class NoteDecryption<ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE>;
+uint252 random_uint252()
+{
+    uint256 rand = random_uint256();
+    (*rand.begin()) &= 0x0F;
+
+    return uint252(rand);
+}
+
+template class NoteEncryption<ZC_NOTEPLAINTEXT_LEADING + ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE>;
+template class NoteDecryption<ZC_NOTEPLAINTEXT_LEADING + ZC_V_SIZE + ZC_RHO_SIZE + ZC_R_SIZE + ZC_MEMO_SIZE>;
 
 }

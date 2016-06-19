@@ -5,6 +5,7 @@
 
 #include "zcash/NoteEncryption.hpp"
 #include "zcash/prf.h"
+#include "crypto/sha256.h"
 
 class TestNoteDecryption : public ZCNoteDecryption {
 public:
@@ -17,7 +18,7 @@ public:
 
 TEST(noteencryption, api)
 {
-    uint256 sk_enc = ZCNoteEncryption::generate_privkey(uint256S("21035d60bc1983e37950ce4803418a8fb33ea68d5b937ca382ecbae7564d6a77"));
+    uint256 sk_enc = ZCNoteEncryption::generate_privkey(uint252(uint256S("21035d60bc1983e37950ce4803418a8fb33ea68d5b937ca382ecbae7564d6a07")));
     uint256 pk_enc = ZCNoteEncryption::generate_pubkey(sk_enc);
 
     ZCNoteEncryption b = ZCNoteEncryption(uint256());
@@ -28,8 +29,8 @@ TEST(noteencryption, api)
         ASSERT_TRUE(b.get_epk() != c.get_epk());
     }
 
-    boost::array<unsigned char, 216> message;
-    for (unsigned char i = 0; i < 216; i++) {
+    boost::array<unsigned char, 201> message;
+    for (unsigned char i = 0; i < 201; i++) {
         // Fill the message with dummy data
         message[i] = (unsigned char) i;
     }
@@ -65,7 +66,7 @@ TEST(noteencryption, api)
 
         {
             // Test wrong private key
-            uint256 sk_enc_2 = ZCNoteEncryption::generate_privkey(uint256());
+            uint256 sk_enc_2 = ZCNoteEncryption::generate_privkey(uint252());
             ZCNoteDecryption decrypter(sk_enc_2);
 
             ASSERT_THROW(decrypter.decrypt(ciphertext, b.get_epk(), uint256(), i), std::runtime_error);
@@ -99,9 +100,10 @@ TEST(noteencryption, api)
 
 uint256 test_prf(
     unsigned char distinguisher,
-    uint256 x,
+    uint252 seed_x,
     uint256 y
 ) {
+    uint256 x = seed_x.inner();
     *x.begin() &= 0x0f;
     *x.begin() |= distinguisher;
     CSHA256 hasher;
@@ -116,7 +118,7 @@ uint256 test_prf(
 TEST(noteencryption, prf_addr)
 {
     for (size_t i = 0; i < 100; i++) {
-        uint256 a_sk = libzcash::random_uint256();
+        uint252 a_sk = libzcash::random_uint252();
         uint256 rest;
         ASSERT_TRUE(
             test_prf(0xc0, a_sk, rest) == PRF_addr_a_pk(a_sk)
@@ -124,7 +126,7 @@ TEST(noteencryption, prf_addr)
     }
 
     for (size_t i = 0; i < 100; i++) {
-        uint256 a_sk = libzcash::random_uint256();
+        uint252 a_sk = libzcash::random_uint252();
         uint256 rest;
         *rest.begin() = 0x01;
         ASSERT_TRUE(
@@ -136,7 +138,7 @@ TEST(noteencryption, prf_addr)
 TEST(noteencryption, prf_nf)
 {
     for (size_t i = 0; i < 100; i++) {
-        uint256 a_sk = libzcash::random_uint256();
+        uint252 a_sk = libzcash::random_uint252();
         uint256 rho = libzcash::random_uint256();
         ASSERT_TRUE(
             test_prf(0xe0, a_sk, rho) == PRF_nf(a_sk, rho)
@@ -147,7 +149,7 @@ TEST(noteencryption, prf_nf)
 TEST(noteencryption, prf_pk)
 {
     for (size_t i = 0; i < 100; i++) {
-        uint256 a_sk = libzcash::random_uint256();
+        uint252 a_sk = libzcash::random_uint252();
         uint256 h_sig = libzcash::random_uint256();
         ASSERT_TRUE(
             test_prf(0x00, a_sk, h_sig) == PRF_pk(a_sk, 0, h_sig)
@@ -155,21 +157,22 @@ TEST(noteencryption, prf_pk)
     }
 
     for (size_t i = 0; i < 100; i++) {
-        uint256 a_sk = libzcash::random_uint256();
+        uint252 a_sk = libzcash::random_uint252();
         uint256 h_sig = libzcash::random_uint256();
         ASSERT_TRUE(
             test_prf(0x40, a_sk, h_sig) == PRF_pk(a_sk, 1, h_sig)
         );
     }
 
-    uint256 dummy;
-    ASSERT_THROW(PRF_pk(dummy, 2, dummy), std::domain_error);
+    uint252 dummy_a;
+    uint256 dummy_b;
+    ASSERT_THROW(PRF_pk(dummy_a, 2, dummy_b), std::domain_error);
 }
 
 TEST(noteencryption, prf_rho)
 {
     for (size_t i = 0; i < 100; i++) {
-        uint256 phi = libzcash::random_uint256();
+        uint252 phi = libzcash::random_uint252();
         uint256 h_sig = libzcash::random_uint256();
         ASSERT_TRUE(
             test_prf(0x20, phi, h_sig) == PRF_rho(phi, 0, h_sig)
@@ -177,13 +180,19 @@ TEST(noteencryption, prf_rho)
     }
 
     for (size_t i = 0; i < 100; i++) {
-        uint256 phi = libzcash::random_uint256();
+        uint252 phi = libzcash::random_uint252();
         uint256 h_sig = libzcash::random_uint256();
         ASSERT_TRUE(
             test_prf(0x60, phi, h_sig) == PRF_rho(phi, 1, h_sig)
         );
     }
 
-    uint256 dummy;
-    ASSERT_THROW(PRF_rho(dummy, 2, dummy), std::domain_error);
+    uint252 dummy_a;
+    uint256 dummy_b;
+    ASSERT_THROW(PRF_rho(dummy_a, 2, dummy_b), std::domain_error);
+}
+
+TEST(noteencryption, uint252)
+{
+    ASSERT_THROW(uint252(uint256S("f6da8716682d600f74fc16bd0187faad6a26b4aa4c24d5c055b216d94516847e")), std::domain_error);
 }
